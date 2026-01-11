@@ -32,8 +32,6 @@ jobs:
 
       - name: Verify
         run: emcc -v
-
-      # ---------------- SDL3 ----------------
       - name: SDL3
         shell: bash
         run: |
@@ -52,8 +50,6 @@ jobs:
             -DSDL_PTHREADS_SEM=OFF \
             -GNinja
           ninja
-
-      # ---------------- SDL2 ----------------
       - name: SDL2
         shell: bash
         run: | 
@@ -101,8 +97,6 @@ jobs:
           emcc -r -o SDL2.o -Wl,--whole-archive libSDL2.a libSDL3.a \
             -s USE_PTHREADS=0
           ar cr SDL2.a SDL2.o
-
-      # ---------------- FNA3D ----------------
       - name: FNA3D
         shell: bash
         run: |
@@ -119,8 +113,6 @@ jobs:
             -DCMAKE_C_FLAGS="-s USE_PTHREADS=0" \
             -GNinja
           ninja
-
-      # ---------------- FAudio ----------------
       - name: FAudio
         shell: bash
         run: |           
@@ -136,8 +128,6 @@ jobs:
             -DCMAKE_C_FLAGS="-s USE_PTHREADS=0" \
             -GNinja
           ninja
-
-      # ---------------- OpenSSL ----------------
       - name: OpenSSL
         shell: bash
         run: |
@@ -151,8 +141,6 @@ jobs:
           emconfigure ./Configure linux-x32 --prefix=$PREFIX -no-asm -static -no-afalgeng -no-dso
           sed -i 's|^CROSS_COMPILE.*$|CROSS_COMPILE=|g' Makefile
           emmake make -j$(nproc --all) build_generated libcrypto.a
-
-      # ---------------- LibA ----------------
       - name: LibA
         shell: bash
         run: |
@@ -166,8 +154,6 @@ jobs:
             -s USE_PTHREADS=0 \
             -DHOST_BROWSER -DHOST_WASM -DTARGET_WASM \
             -Iruntime/src/mono/ -Iruntime/src/mono/mono/ -Iruntime/src/native/public/ -Iruntime/src/mono/mono/eglib/ -Iruntime/src/native/ -I.
-
-      # ---------------- dotnet ----------------
       - name: dotnet
         shell: bash
         run: |
@@ -175,9 +161,7 @@ jobs:
           git apply ../../dotnet.patch
           ./build.sh -os browser -s mono+libs /p:WasmEnableThreads=false -c Release
           7z a ../runtime.zip './artifacts/bin/microsoft.netcore.app.runtime.browser-wasm/Release/*'
-
-      # ---------------- Package ----------------
-      - name: Copy Binaries (with new names)
+      - name: Copy Binaries
         shell: bash
         run: |
           mkdir Binaries
@@ -190,7 +174,6 @@ jobs:
           cp ./FNA3D/build/libmojoshader.a Binaries/libmojoshader.a    
           cp ./FAudio/build/libFAudio.a Binaries/FAudio.a
           cp ./openssl/openssl/libcrypto.a Binaries/libcrypto.a
-
       - name: Compress Binaries
         run: 7z a FNA-WASM.Binaries.zip Binaries/*
 
@@ -199,7 +182,6 @@ jobs:
         with:
           name: WASM Libraries for ${{ matrix.variant }} on ${{ matrix.os }}
           path: FNA-WASM.Binaries.zip
-
       - name: Make a release
         uses: ncipollo/release-action@v1
         with:

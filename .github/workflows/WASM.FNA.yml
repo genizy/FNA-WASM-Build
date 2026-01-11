@@ -17,17 +17,23 @@ jobs:
     steps:
       - name: generate random name
         run: echo RELEASE_NAME=$(uuidgen) >> $GITHUB_ENV
+
       - name: Check out source
         uses: actions/checkout@v1
+
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.56
+
       - name: Install dependencies
         run: |
           sudo apt -y update
           sudo apt install -y ninja-build cmake llvm lld clang build-essential python-is-python3 curl git lldb libicu-dev liblttng-ust-dev libssl-dev libkrb5-dev pigz cpio spirv-headers
+
       - name: Verify
         run: emcc -v
+
+      # ---------------- SDL3 ----------------
       - name: SDL3
         shell: bash
         run: |
@@ -36,22 +42,25 @@ jobs:
           git apply /home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL.patch
           mkdir emscripten-build
           cd emscripten-build
-          CFLAGS="-pthread" emcmake cmake -S .. \
+          emcmake cmake -S .. \
             -DSDL_WERROR=ON \
             -DSDL_TESTS=OFF \
             -DSDL_INSTALL_TESTS=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=prefix \
-            -DSDL_PTHREADS=ON \
-            -DSDL_PTHREADS_SEM=ON \
+            -DSDL_PTHREADS=OFF \
+            -DSDL_PTHREADS_SEM=OFF \
             -GNinja
           ninja
+
+      # ---------------- SDL2 ----------------
       - name: SDL2
         shell: bash
         run: | 
           mkdir SDL2
           cd SDL2
           bash ../symbolrenamer.sh ../SDL/emscripten-build/libSDL3.a ./SDL3.renamed.h
+
           git clone -b release-3.2.26 https://github.com/libsdl-org/SDL
           cd SDL
           git apply /home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL.patch
@@ -64,12 +73,13 @@ jobs:
             -DSDL_INSTALL_TESTS=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=prefix \
-            -DSDL_PTHREADS=ON \
-            -DSDL_PTHREADS_SEM=ON \
-            -DCMAKE_C_FLAGS="-pthread -include /home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL2/SDL3.renamed.h" \
+            -DSDL_PTHREADS=OFF \
+            -DSDL_PTHREADS_SEM=OFF \
+            -DCMAKE_C_FLAGS="-include /home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL2/SDL3.renamed.h" \
             -GNinja
           ninja
           cd ../..
+
           git clone -b release-2.32.58 https://github.com/libsdl-org/sdl2-compat
           cd sdl2-compat
           git apply /home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL2.patch
@@ -81,14 +91,18 @@ jobs:
             -DSDL2COMPAT_STATIC=1 \
             -DSDL2COMPAT_TESTS=OFF \
             -DSDL2COMPAT_X11=OFF \
-            -DCMAKE_C_FLAGS="-pthread -DSTATIC_SDL3" \
+            -DCMAKE_C_FLAGS="-DSTATIC_SDL3" \
             -GNinja
           ninja
           cd ../..
+
           cp SDL/emscripten-build/libSDL3.a libSDL3.a
           cp sdl2-compat/emscripten-build/libSDL2-2.0.a libSDL2.a
-          emcc -r -o SDL2.o -Wl,--whole-archive libSDL2.a libSDL3.a
+          emcc -r -o SDL2.o -Wl,--whole-archive libSDL2.a libSDL3.a \
+            -s USE_PTHREADS=0
           ar cr SDL2.a SDL2.o
+
+      # ---------------- FNA3D ----------------
       - name: FNA3D
         shell: bash
         run: |
@@ -102,8 +116,11 @@ jobs:
             -DSDL3_INCLUDE_DIRS=/home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL/include \
             -DSDL3_LIBRARIES=/home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL/emscripten-build/libSDL3.a \
             -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_C_FLAGS="-s USE_PTHREADS=0" \
             -GNinja
           ninja
+
+      # ---------------- FAudio ----------------
       - name: FAudio
         shell: bash
         run: |           
@@ -116,12 +133,14 @@ jobs:
             -DSDL3_INCLUDE_DIRS=/home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL/include \
             -DSDL3_LIBRARIES=/home/runner/work/FNA-WASM-Build/FNA-WASM-Build/SDL/emscripten-build/libSDL3.a \
             -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_C_FLAGS="-s USE_PTHREADS=0" \
             -GNinja
           ninja
+
+      # ---------------- OpenSSL ----------------
       - name: OpenSSL
         shell: bash
         run: |
-          # https://github.com/ading2210/libcurl.js/blob/b071019761fe4a9833f7f45b5f7fc2a15cb55e4a/client/tools/openssl.sh
           PREFIX=$PWD/openssl/openssl-wasm
           mkdir -p $PREFIX  
           cd openssl
@@ -129,27 +148,35 @@ jobs:
           cd openssl
           export CFLAGS="-Wall -Oz"
           export CXXFLAGS="-Wall -Oz"
-          emconfigure ./Configure linux-x32 --prefix=$PREFIX -no-asm -static -no-afalgeng -no-dso -DOPENSSL_SYS_NETWARE -DSIG_DFL=0 -DSIG_IGN=0 -DHAVE_FORK=0 -DOPENSSL_NO_AFALGENG=1 -DOPENSSL_NO_SPEED=1 -DOPENSSL_NO_DYNAMIC_ENGINE -DDLOPEN_FLAG=0
+          emconfigure ./Configure linux-x32 --prefix=$PREFIX -no-asm -static -no-afalgeng -no-dso
           sed -i 's|^CROSS_COMPILE.*$|CROSS_COMPILE=|g' Makefile
           emmake make -j$(nproc --all) build_generated libcrypto.a
+
+      # ---------------- LibA ----------------
       - name: LibA
         shell: bash
         run: |
           cd liba/
           git clone -b v10.0.0 --depth=1 https://github.com/dotnet/runtime
           emcc liba.c -r -o liba.o \
+            -s USE_PTHREADS=0 \
             -DHOST_BROWSER -DHOST_WASM -DTARGET_WASM \
             -Iruntime/src/mono/ -Iruntime/src/mono/mono/ -Iruntime/src/native/public/ -Iruntime/src/mono/mono/eglib/ -Iruntime/src/native/ -I.
           emcc hot_reload_detour.c -r -o hot_reload_detour.o \
+            -s USE_PTHREADS=0 \
             -DHOST_BROWSER -DHOST_WASM -DTARGET_WASM \
             -Iruntime/src/mono/ -Iruntime/src/mono/mono/ -Iruntime/src/native/public/ -Iruntime/src/mono/mono/eglib/ -Iruntime/src/native/ -I.
+
+      # ---------------- dotnet ----------------
       - name: dotnet
         shell: bash
         run: |
           cd liba/runtime/
           git apply ../../dotnet.patch
-          ./build.sh -os browser -s mono+libs /p:WasmEnableThreads=true -c Release
+          ./build.sh -os browser -s mono+libs /p:WasmEnableThreads=false -c Release
           7z a ../runtime.zip './artifacts/bin/microsoft.netcore.app.runtime.browser-wasm/Release/*'
+
+      # ---------------- Package ----------------
       - name: Copy Binaries (with new names)
         shell: bash
         run: |
@@ -163,13 +190,16 @@ jobs:
           cp ./FNA3D/build/libmojoshader.a Binaries/libmojoshader.a    
           cp ./FAudio/build/libFAudio.a Binaries/FAudio.a
           cp ./openssl/openssl/libcrypto.a Binaries/libcrypto.a
+
       - name: Compress Binaries
         run: 7z a FNA-WASM.Binaries.zip Binaries/*
+
       - name: Archive ${{ matrix.variant }} WASM archive on ${{ matrix.os }}
         uses: actions/upload-artifact@master
         with:
           name: WASM Libraries for ${{ matrix.variant }} on ${{ matrix.os }}
           path: FNA-WASM.Binaries.zip
+
       - name: Make a release
         uses: ncipollo/release-action@v1
         with:
